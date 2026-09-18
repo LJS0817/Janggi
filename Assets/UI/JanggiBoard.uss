@@ -892,6 +892,11 @@ Label, Button, TextField {
     color: rgb(255, 255, 255);
 }
 
+.discard-btn--active:hover {
+    background-color: rgb(185, 28, 28);
+    border-color: rgb(153, 27, 27);
+}
+
 /* 한 수 쉼 버튼 */
 .pass-btn {
     color: rgb(255, 255, 255);
@@ -2127,6 +2132,7 @@ Label, Button, TextField {
 
 .callout-card-frame {
     min-width: 290px;
+    width: fit-content;
     padding: 24px 44px 22px 44px;
     border-radius: 24px;
     border-width: 4px;
@@ -2200,6 +2206,7 @@ Label, Button, TextField {
 
 .callout-subtitle {
     font-size: 24px;
+    width: 100%;
     -unity-font-style: bold;
     letter-spacing: 3px;
     -unity-text-align: middle-center;

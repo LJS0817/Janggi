@@ -483,6 +483,14 @@ MonoBehaviour:
     m_Key: Format_Full_Piece
     m_Metadata:
       m_Items: []
+  - m_Id: 493324591205
+    m_Key: Modal_Pause_Title
+    m_Metadata:
+      m_Items: []
+  - m_Id: 493324591206
+    m_Key: Btn_Continue
+    m_Metadata:
+      m_Items: []
   m_Metadata:
     m_Items: []
   m_KeyGenerator:

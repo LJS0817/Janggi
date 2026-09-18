@@ -51,7 +51,7 @@ namespace Janggi.AI
             var allPieces = board.GetAllPieces();
             foreach (var piece in allPieces)
             {
-                int pieceScore = GetPieceValue(piece.Type) + GetPositionBonus(piece);
+                int pieceScore = GetPieceValue(piece.Type) + GetPositionBonus(board, piece);
 
                 if (piece.Side == forSide)
                     score += pieceScore;
@@ -70,55 +70,110 @@ namespace Janggi.AI
         }
 
         /// <summary>
-        /// 기물의 위치에 따른 전술적 보너스 점수를 계산합니다.
+        /// 기물의 위치 및 방어 상태에 따른 전술적 보너스 점수를 계산합니다.
         /// </summary>
-        private static int GetPositionBonus(Piece piece)
+        private static int GetPositionBonus(Board board, Piece piece)
         {
             int bonus = 0;
             var pos = piece.Position;
+            bool isHan = piece.Side == PlayerSide.Han;
 
-            // 중앙(Col 3,4,5) 장악 보너스
-            if (pos.Col >= 3 && pos.Col <= 5)
+            // 1. 궁성 내 수비력 평가
+            if (piece.Type == PieceType.King)
             {
-                bonus += 5;
+                // 왕은 궁성 중앙(4, 1 or 4, 8)에 있을 때 가장 안전함
+                int idealRow = isHan ? 8 : 1;
+                if (pos.Col == 4 && pos.Row == idealRow) bonus += 5;
+                
+                // 사(Advisor)가 왕 주변에 있는지 확인 (수비력 가산점)
+                int advisorDefenders = 0;
+                var myPieces = board.GetPiecesBySide(piece.Side);
+                foreach (var p in myPieces)
+                {
+                    if (p.Type == PieceType.Advisor && Math.Abs(p.Position.Col - pos.Col) <= 1 && Math.Abs(p.Position.Row - pos.Row) <= 1)
+                    {
+                        advisorDefenders++;
+                    }
+                }
+                bonus += advisorDefenders * 5; // 수비 비중을 다소 낮춤 (공격 유도)
             }
-
-            switch (piece.Type)
+            else if (piece.Type == PieceType.Advisor)
             {
-                case PieceType.Pawn:
-                    // 졸/병은 전진할수록 가치가 올라감
-                    if (piece.Side == PlayerSide.Cho)
-                        bonus += pos.Row * 2; // 위로 전진
-                    else
-                        bonus += (9 - pos.Row) * 2; // 아래로 전진
-                    break;
+                // 사는 궁성 내에 머무르는 것이 좋음
+                int centerRow = isHan ? 8 : 1;
+                if (pos.Col >= 3 && pos.Col <= 5 && Math.Abs(pos.Row - centerRow) <= 1)
+                    bonus += 5;
+            }
+            // 2. 공격 기물 위치 평가
+            else
+            {
+                // 중앙(Col 3,4,5) 장악 보너스
+                if (pos.Col >= 3 && pos.Col <= 5)
+                {
+                    bonus += 10; // 중앙 장악 중요도 상향
+                }
 
-                case PieceType.Horse:
-                case PieceType.Elephant:
-                    // 마/상은 중앙 진출 시 활약도 증가
-                    if (pos.Row >= 3 && pos.Row <= 6)
-                        bonus += 8;
-                    break;
+                switch (piece.Type)
+                {
+                    case PieceType.Pawn:
+                        // 졸/병은 전진할수록, 그리고 뭉쳐있을수록 가치가 올라감
+                        if (!isHan)
+                            bonus += pos.Row * 3; // 위로 전진 가중치 상향
+                        else
+                            bonus += (9 - pos.Row) * 3;
+                        
+                        // 졸끼리 인접해 있으면 수비/공격 보너스 (Linked Pawns)
+                        var myPieces = board.GetPiecesBySide(piece.Side);
+                        foreach (var p in myPieces)
+                        {
+                            if (p != piece && p.Type == PieceType.Pawn)
+                            {
+                                if (Math.Abs(p.Position.Col - pos.Col) <= 1 && Math.Abs(p.Position.Row - pos.Row) <= 1)
+                                {
+                                    bonus += 3;
+                                }
+                            }
+                        }
+                        break;
 
-                case PieceType.Chariot:
-                    // 차는 적 진영 깊숙이 침투 시 높은 점수
-                    if (piece.Side == PlayerSide.Han && pos.Row <= 3)
-                        bonus += 15; // 한 차가 초 진영 침투
-                    else if (piece.Side == PlayerSide.Cho && pos.Row >= 6)
-                        bonus += 15;
-                    break;
+                    case PieceType.Horse:
+                    case PieceType.Elephant:
+                        // 마/상은 중앙 진출 시 활약도 증가 (Row 3~6)
+                        if (pos.Row >= 3 && pos.Row <= 6)
+                            bonus += 15; // 공격적 진출 보너스 상향
+                        
+                        // 가장자리에 있으면 감점 (이동 반경 제한)
+                        if (pos.Col == 0 || pos.Col == 8)
+                            bonus -= 5;
+                        break;
 
-                case PieceType.Cannon:
-                    // 포는 궁성 주변 조준 시 가치 상승
-                    if (pos.Col >= 3 && pos.Col <= 5)
+                    case PieceType.Chariot:
+                        // 차는 적 진영 깊숙이 침투 시 높은 점수 (적 궁성 위협)
+                        if (isHan && pos.Row <= 3)
+                            bonus += 30; // 침투 보너스 대폭 상향
+                        else if (!isHan && pos.Row >= 6)
+                            bonus += 30;
+                        
+                        // 차가 개방된 열(앞에 기물이 없는 열)에 있으면 보너스
                         bonus += 10;
-                    break;
+                        break;
+
+                    case PieceType.Cannon:
+                        // 포는 궁성 주변 조준 또는 중앙 조준 시 가치 상승
+                        if (pos.Col >= 3 && pos.Col <= 5)
+                            bonus += 15; // 공격적 조준 보너스 상향
+                        
+                        // 포는 아군 진영에 있을 때 방어 포대로서 가치가 높음
+                        if ((isHan && pos.Row >= 6) || (!isHan && pos.Row <= 3))
+                            bonus += 3; // 수비적 위치는 상대적으로 가치 하락
+                        break;
+                }
             }
 
             // 상대 소환 구역 점거(스폰 블로킹) 보너스
-            if (IsBlockingOpponentSpawn(piece))
+            if (piece.Type != PieceType.King && piece.Type != PieceType.Advisor && IsBlockingOpponentSpawn(piece))
             {
-                bonus += 12;
+                bonus += 20; // 스폰 블로킹 보너스 대폭 상향 (공격 압박 유도)
             }
 
             return bonus;

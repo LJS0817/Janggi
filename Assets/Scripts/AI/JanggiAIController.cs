@@ -145,10 +145,33 @@ namespace Janggi.AI
             return DecideSpawnNormal(board, aiState);
         }
 
-        /// <summary>[극악] 외통수 턴 올인 및 플레이어 공개 패를 분석한 사전 수비 소환</summary>
+        /// <summary>[극악] 외통수 방어, 외통수 턴 올인 및 플레이어 공개 패를 분석한 사전 수비 소환</summary>
         private static (bool, int, BoardPosition) DecideSpawnHell(Board board, PlayerState aiState, PlayerState playerState)
         {
-            // 1순위: 즉시 외통수를 낼 수 있는 소환 조합 탐색
+            // 1순위: 내 왕이 위험할 때, 방어벽을 세울 수 있는 소환 탐색 (Defensive Spawning)
+            if (GameRuleValidator.IsInCheck(board, PlayerSide.Han))
+            {
+                for (int i = 0; i < aiState.Hand.Count; i++)
+                {
+                    var pieceType = aiState.Hand[i];
+                    if (!aiState.CanSummon(board, pieceType)) continue;
+
+                    var spawnPositions = SpawnRuleValidator.GetSpawnablePositions(board, PlayerSide.Han, pieceType);
+                    foreach (var pos in spawnPositions)
+                    {
+                        var simBoard = board.Clone();
+                        simBoard.PlacePiece(new Piece(pieceType, PlayerSide.Han, pos));
+
+                        // 소환 후 장군을 피했는지 확인
+                        if (!GameRuleValidator.IsInCheck(simBoard, PlayerSide.Han))
+                        {
+                            return (true, i, pos);
+                        }
+                    }
+                }
+            }
+
+            // 2순위: 즉시 외통수를 낼 수 있는 소환 조합 탐색
             for (int i = 0; i < aiState.Hand.Count; i++)
             {
                 var pieceType = aiState.Hand[i];
@@ -201,44 +224,67 @@ namespace Janggi.AI
                     return DecideMoveEasy(board, allLegalMoves);
 
                 case AIDifficulty.Normal:
-                    return DecideMoveMinimax(board, allLegalMoves, depth: 3);
+                    return DecideMoveMinimax(board, allLegalMoves, depth: 2);
 
                 case AIDifficulty.Hard:
-                    return DecideMoveMinimax(board, allLegalMoves, depth: 4);
+                    return DecideMoveMinimax(board, allLegalMoves, depth: 3);
 
                 case AIDifficulty.Hell:
-                    return DecideMoveMCTS(board, allLegalMoves, simulations: 30);
+                    return DecideMoveMinimax(board, allLegalMoves, depth: 4);
 
                 default:
-                    return DecideMoveMinimax(board, allLegalMoves, depth: 3);
+                    return DecideMoveMinimax(board, allLegalMoves, depth: 2);
             }
         }
 
-        /// <summary>[하] 1수 탐색: 눈앞의 기물을 무조건 공격 (없으면 무작위 전진)</summary>
+        /// <summary>[하] 30% 무작위 수, 70% 1수 앞 탐색</summary>
         private static (Piece, BoardPosition) DecideMoveEasy(Board board, List<(Piece piece, BoardPosition to)> moves)
         {
-            var captureMoves = new List<(Piece piece, BoardPosition to)>();
-
-            foreach (var m in moves)
+            if (_random.NextDouble() < 0.3)
             {
-                var target = board.GetPieceAt(m.to);
-                if (target != null && target.Side == PlayerSide.Cho)
-                {
-                    captureMoves.Add(m);
-                }
+                return moves[_random.Next(moves.Count)];
             }
-
-            // 잡을 수 있는 기물이 있으면 그 중 무작위 선택
-            if (captureMoves.Count > 0)
-            {
-                return captureMoves[_random.Next(captureMoves.Count)];
-            }
-
-            // 없으면 전체 합법수 중 무작위 선택
-            return moves[_random.Next(moves.Count)];
+            
+            return DecideMoveMinimax(board, moves, depth: 1);
         }
 
-        /// <summary>[중/상] Minimax with Alpha-Beta Pruning 탐색</summary>
+        /// <summary>
+        /// 탐색 최적화를 위한 MVV-LVA (가장 가치 있는 적을 가장 가치가 낮은 기물로 잡는 수 우선) 정렬
+        /// </summary>
+        private static void SortMovesByMVVLVA(Board board, List<(Piece piece, BoardPosition to)> moves)
+        {
+            moves.Sort((a, b) =>
+            {
+                var targetA = board.GetPieceAt(a.to);
+                var targetB = board.GetPieceAt(b.to);
+                
+                int scoreA = 0;
+                int scoreB = 0;
+
+                if (targetA != null)
+                {
+                    scoreA = BoardEvaluator.GetPieceValue(targetA.Type) * 10 - BoardEvaluator.GetPieceValue(a.piece.Type);
+                }
+                
+                if (targetB != null)
+                {
+                    scoreB = BoardEvaluator.GetPieceValue(targetB.Type) * 10 - BoardEvaluator.GetPieceValue(b.piece.Type);
+                }
+                
+                // 가치가 같으면 앞으로 전진하는 수를 조금 더 선호 (단순 평가)
+                if (scoreA == scoreB)
+                {
+                    int forwardA = (a.piece.Side == PlayerSide.Han) ? (a.piece.Position.Row - a.to.Row) : (a.to.Row - a.piece.Position.Row);
+                    int forwardB = (b.piece.Side == PlayerSide.Han) ? (b.piece.Position.Row - b.to.Row) : (b.to.Row - b.piece.Position.Row);
+                    scoreA += forwardA;
+                    scoreB += forwardB;
+                }
+
+                return scoreB.CompareTo(scoreA); // 내림차순 정렬
+            });
+        }
+
+        /// <summary>[중/상/극악] Minimax with Alpha-Beta Pruning 탐색</summary>
         private static (Piece, BoardPosition) DecideMoveMinimax(
             Board board, List<(Piece piece, BoardPosition to)> moves, int depth)
         {
@@ -247,15 +293,7 @@ namespace Janggi.AI
             int alpha = int.MinValue;
             int beta = int.MaxValue;
 
-            // 이동 수들을 가치 순(공격수 우선)으로 정렬하여 가지치기 효율 극대화
-            moves.Sort((a, b) =>
-            {
-                var targetA = board.GetPieceAt(a.to);
-                var targetB = board.GetPieceAt(b.to);
-                int valA = targetA != null ? BoardEvaluator.GetPieceValue(targetA.Type) : 0;
-                int valB = targetB != null ? BoardEvaluator.GetPieceValue(targetB.Type) : 0;
-                return valB.CompareTo(valA);
-            });
+            SortMovesByMVVLVA(board, moves);
 
             foreach (var m in moves)
             {
@@ -295,6 +333,8 @@ namespace Janggi.AI
                 return BoardEvaluator.Evaluate(board, PlayerSide.Han);
             }
 
+            SortMovesByMVVLVA(board, legalMoves);
+
             if (isMaximizing)
             {
                 int maxEval = int.MinValue;
@@ -327,70 +367,6 @@ namespace Janggi.AI
                 }
                 return minEval;
             }
-        }
-
-        /// <summary>[극악] MCTS 기반 몬테카를로 롤아웃 시뮬레이션</summary>
-        private static (Piece, BoardPosition) DecideMoveMCTS(
-            Board board, List<(Piece piece, BoardPosition to)> moves, int simulations)
-        {
-            // 먼저 즉시 외통수(Checkmate)가 나는 수가 있다면 즉시 실행
-            foreach (var m in moves)
-            {
-                var simBoard = board.Clone();
-                var simPiece = simBoard.GetPieceAt(m.piece.Position);
-                simBoard.MovePiece(simPiece, m.to);
-
-                if (GameRuleValidator.IsCheckmate(simBoard, PlayerSide.Cho))
-                {
-                    return (m.piece, m.to);
-                }
-            }
-
-            (Piece bestPiece, BoardPosition bestTo) = moves[0];
-            double bestWinRate = double.MinValue;
-
-            foreach (var m in moves)
-            {
-                int totalScore = 0;
-
-                for (int s = 0; s < simulations; s++)
-                {
-                    var simBoard = board.Clone();
-                    var simPiece = simBoard.GetPieceAt(m.piece.Position);
-                    simBoard.MovePiece(simPiece, m.to);
-
-                    // 롤아웃 (2수 랜덤 시뮬레이션 후 평가)
-                    totalScore += Rollout(simBoard, 2);
-                }
-
-                double avgScore = (double)totalScore / simulations;
-                if (avgScore > bestWinRate)
-                {
-                    bestWinRate = avgScore;
-                    bestPiece = m.piece;
-                    bestTo = m.to;
-                }
-            }
-
-            return (bestPiece, bestTo);
-        }
-
-        private static int Rollout(Board board, int steps)
-        {
-            var currentSide = PlayerSide.Cho;
-            for (int i = 0; i < steps; i++)
-            {
-                var moves = GameRuleValidator.GetAllLegalMovesForSide(board, currentSide);
-                if (moves.Count == 0) break;
-
-                var chosen = moves[_random.Next(moves.Count)];
-                var piece = board.GetPieceAt(chosen.piece.Position);
-                board.MovePiece(piece, chosen.to);
-
-                currentSide = currentSide.Opposite();
-            }
-
-            return BoardEvaluator.Evaluate(board, PlayerSide.Han);
         }
     }
 }

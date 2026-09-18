@@ -369,6 +369,23 @@ namespace Janggi
             {
                 if (_currentTurn == PlayerSide.Cho) _playerCaptures++;
 
+                // 왕이 잡히는 것은 장기 규칙상 예외 상황이나, 버그 발생 시 게임이 멈추지 않도록 강제 종료 처리
+                if (captured.Type == PieceType.King)
+                {
+                    _gameOver = true;
+                    bool isPlayerWin = _currentTurn == PlayerSide.Cho;
+                    string winner = isPlayerWin ? LocalizationManager.Get("Msg_Winner_Player") : LocalizationManager.Get("Msg_Winner_AI");
+                    MobileHapticManager.Instance.Trigger(isPlayerWin ? HapticType.Success : HapticType.Error);
+
+                    var reviewData = new BoardReviewData { IsCheckmate = true, IsDraw = false, IsPlayerWin = isPlayerWin };
+                    reviewData.RebuildExplanation();
+                    
+                    _uiController.ShowStatus(LocalizationManager.Get("Msg_Checkmate_Winner", winner));
+                    _uiController.ShowGameOverModal(isWin: isPlayerWin, isDraw: false, _aiDifficulty, _turnCount, _playerCaptures, _playerSummons, reviewData);
+                    Debug.Log($"[Janggi] 왕이 직접 잡혔습니다! {winner} 승리!");
+                    return;
+                }
+
                 // 상대 기물 처치 시 코스트 +1 획득 (최대 10 코스트)
                 var currentPlayerState = GetCurrentPlayerState();
                 currentPlayerState?.AddCost(PlayerState.CaptureCostGain);
@@ -443,9 +460,13 @@ namespace Janggi
             }
             else if (_wasCurrentSideInCheckBeforeTurn)
             {
-                // 장군 상태에서 성공적으로 벗어남 (멍군! 중간 강도 햅틱)
-                MobileHapticManager.Instance.Trigger(HapticType.Medium);
-                _uiController?.ShowCallout(CalloutType.Escape, _currentTurn);
+                // 장군 상태에서 성공적으로 벗어난 경우에만 멍군 연출
+                if (!GameRuleValidator.IsInCheck(_board, _currentTurn))
+                {
+                    // 멍군! 중간 강도 햅틱
+                    MobileHapticManager.Instance.Trigger(HapticType.Medium);
+                    _uiController?.ShowCallout(CalloutType.Escape, _currentTurn);
+                }
             }
 
             // 4. 턴 교대 및 새 턴 자원 충전 (+2, gemini.md §3)
@@ -523,6 +544,15 @@ namespace Janggi
 
                         Debug.Log($"[Janggi] AI {pieceType} 소환 완료 (소모: {pieceType.GetCost()}, 남은 코스트: {_hanState.CurrentCost})");
                         yield return new WaitForSeconds(0.5f);
+                        
+                        // 만약 AI가 장군 상태였는데 소환으로 방어에 성공했다면 즉시 턴 종료
+                        if (_wasCurrentSideInCheckBeforeTurn && !GameRuleValidator.IsInCheck(_board, PlayerSide.Han))
+                        {
+                            Debug.Log("[Janggi] AI 소환으로 멍군(장군 방어) 성공! 턴을 자동 종료합니다.");
+                            ProcessPostMove();
+                            _aiCoroutine = null;
+                            yield break;
+                        }
                     }
                 }
             }
@@ -542,7 +572,22 @@ namespace Janggi
             else
             {
                 // 합법수가 없는 경우(외통수/스테일메이트)
-                ProcessPostMove();
+                if (GameRuleValidator.IsInCheck(_board, PlayerSide.Han))
+                {
+                    _gameOver = true;
+                    var reviewData = GameRuleValidator.AnalyzeGameOver(_board, loserSide: PlayerSide.Han, isDraw: false, isPlayerWin: true);
+                    _uiController.ShowStatus(LocalizationManager.Get("Msg_Checkmate_Winner", LocalizationManager.Get("Msg_Winner_Player")));
+                    _uiController.ShowGameOverModal(isWin: true, isDraw: false, _aiDifficulty, _turnCount, _playerCaptures, _playerSummons, reviewData);
+                    Debug.Log("[Janggi] AI 스스로 외통수(합법수 없음). 플레이어 승리!");
+                }
+                else
+                {
+                    _gameOver = true;
+                    var reviewData = GameRuleValidator.AnalyzeGameOver(_board, loserSide: PlayerSide.Han, isDraw: true, isPlayerWin: false);
+                    _uiController.ShowStatus(LocalizationManager.Get("Msg_Stalemate"));
+                    _uiController.ShowGameOverModal(isWin: false, isDraw: true, _aiDifficulty, _turnCount, _playerCaptures, _playerSummons, reviewData);
+                    Debug.Log("[Janggi] AI 스테일메이트(합법수 없음). 무승부!");
+                }
             }
 
             _aiCoroutine = null;

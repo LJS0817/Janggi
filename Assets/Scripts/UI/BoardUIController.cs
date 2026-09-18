@@ -134,6 +134,7 @@ namespace Janggi.UI
         private readonly Label _rule4Desc;
         private readonly Label _rule5Title;
         private readonly Label _rule5Desc;
+        private readonly Label _pauseModalTitle;
 
         private AIDifficulty _selectedDifficulty = AIDifficulty.Normal;
 
@@ -268,6 +269,7 @@ namespace Janggi.UI
             
             _btnPause = root.Q<Button>("btn-pause");
             _pauseModal = root.Q<VisualElement>("pause-modal");
+            _pauseModalTitle = root.Q<Label>("pause-modal-title");
             _btnContinue = root.Q<Button>("btn-continue");
 
             _adLoadingOverlay = root.Q<VisualElement>("ad-loading-overlay");
@@ -507,7 +509,7 @@ namespace Janggi.UI
             }
             if (_btnHeaderHaptic != null && _btnHeaderHaptic.panel != null)
             {
-                _btnHeaderHaptic.text = isEnabled ? "진동 On" : "진동 Off";
+                _btnHeaderHaptic.text = _btnHapticToggle.text;
             }
         }
 
@@ -571,6 +573,9 @@ namespace Janggi.UI
                 if (_btnGotoMenu != null && _btnGotoMenu.panel != null) _btnGotoMenu.text = LocalizationManager.Get("Btn_Menu");
                 if (_btnPassTurn != null && _btnPassTurn.panel != null) _btnPassTurn.text = LocalizationManager.Get("Btn_Pass");
                 if (_btnPause != null && _btnPause.panel != null) _btnPause.text = LocalizationManager.Get("Btn_Pause");
+                
+                if (_pauseModalTitle != null && _pauseModalTitle.panel != null) _pauseModalTitle.text = LocalizationManager.Get("Modal_Pause_Title");
+                if (_btnContinue != null && _btnContinue.panel != null) _btnContinue.text = LocalizationManager.Get("Btn_Continue");
 
                 if (_hanSideLabel != null && _hanSideLabel.panel != null) _hanSideLabel.text = LocalizationManager.Get("Side_Han");
                 if (_choSideLabel != null && _choSideLabel.panel != null) _choSideLabel.text = LocalizationManager.Get("Side_Cho");

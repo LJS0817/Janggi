@@ -257,7 +257,7 @@
 
         <!-- 일시정지 모달 -->
         <ui:VisualElement name="pause-modal" class="modal-overlay" style="display: none;">
-            <ui:VisualElement class="modal-card-wrapper" style="width: 340px;">
+            <ui:VisualElement class="modal-card-wrapper" style="width: 500px;">
                 <ui:VisualElement class="modal-card-shadow"/>
                 <ui:VisualElement class="modal-card pause-modal-card">
                     <ui:Label name="pause-modal-title" text="일시정지" class="modal-title" style="margin-bottom: 24px; text-align: center;"/>

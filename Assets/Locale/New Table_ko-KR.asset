@@ -359,7 +359,7 @@ MonoBehaviour:
     m_Metadata:
       m_Items: []
   - m_Id: 493324591201
-    m_Localized: "\uAD11\uACE0 \uB85C\uB529\uC911..."
+    m_Localized: "\uAD11\uACE0\r\n\uB85C\uB529 \uC911..."
     m_Metadata:
       m_Items: []
   - m_Id: 493324591166
@@ -525,6 +525,14 @@ MonoBehaviour:
       m_Items: []
   - m_Id: 493324591204
     m_Localized: '{0} {1}'
+    m_Metadata:
+      m_Items: []
+  - m_Id: 493324591205
+    m_Localized: "\uC77C\uC2DC\uC815\uC9C0"
+    m_Metadata:
+      m_Items: []
+  - m_Id: 493324591206
+    m_Localized: "\uACC4\uC18D\uD558\uAE30"
     m_Metadata:
       m_Items: []
   references:
